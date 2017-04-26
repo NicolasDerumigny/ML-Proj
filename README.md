@@ -8,12 +8,23 @@ Emma Kerinec and Nicolas Derumigny
 ==================================
 
 
+Definitions
+===========
+
+EBM = density estimatior tool based on a parametrisation of the negative
+log probability, which is called energy, and then computing
+the density with a proper normalization
+
+DSEBM = EBM + the energy is learnt by a deep-structured NN (Fully connected for static data, RNN for sequential, CNN for images)
 
 
-Please run
-$ source set_vars.sh 
-before if you plan (as me) to run it on an AMD GPU
+Training by score matching method (intead of maximum likelyhood) by standard stochastic gradient descent (SGD) as a deep denoising autoencoder.
 
 
-Use of Tensorflow-gpu (OpenCL beta support)
+
+
+
+
+=============================================================================
+Use of tensorflow-opencl (https://github.com/benoitsteiner/tensorflow-opencl)
 Use of yadlt (http://deep-learning-tensorflow.readthedocs.io)
