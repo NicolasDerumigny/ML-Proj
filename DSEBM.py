@@ -1,9 +1,9 @@
 import tensorflow as tf
 import numpy as np
+import math
 import os
-from scipy import misc
 
-## Code from https://gist.github.com/blackecho/db85fab069bd2d6fb3e7#file-rbm_after_refactor-py
+## Original code from https://gist.github.com/blackecho/db85fab069bd2d6fb3e7#file-rbm_after_refactor-py
 
 ## Utils
 
@@ -17,39 +17,16 @@ def sample_prob(probs, rand):
     return tf.nn.relu(tf.sign(probs - rand))
 
 
-def gen_batches(data, batch_size):
-    """ Divide input data into batches.
-    :param data: input data
-    :param batch_size: size of each batch
-    :return: data divided into batches
-    """
-    data = np.array(data)
+class FC_DSEBM(object):
 
-    for i in range(0, data.shape[0], batch_size):
-        yield data[i:i+batch_size]
-
-
-def gen_image(img, width, height, outfile, img_type='grey'):
-    assert len(img) == width * height or len(img) == width * height * 3
-
-    if img_type == 'grey':
-        misc.imsave(outfile, img.reshape(width, height))
-
-    elif img_type == 'color':
-        misc.imsave(outfile, img.reshape(3, width, height))
-
-
-
-
-class RBM(object):
-
-    """ Restricted Boltzmann Machine implementation using TensorFlow.
+    """ Fully Connected Deep-Structured Energy Based Model
+    implementation using TensorFlow.
     The interface of the class is sklearn-like.
     """
 
     def __init__(self, num_visible, num_hidden, visible_unit_type='bin', main_dir='rbm', model_name='rbm_model',
-                 gibbs_sampling_steps=1, learning_rate=0.01, batch_size=10, num_epochs=10, stddev=0.1, verbose=0):
-
+                learning_rate=0.01, num_epochs=10, stddev=0.1, verbose=0):
+    	#TODO : remove visible unit type, make it as an array
         """
         :param num_visible: number of visible units
         :param num_hidden: number of hidden units
@@ -58,7 +35,6 @@ class RBM(object):
         :param model_name: name of the model, used to save data
         :param gibbs_sampling_steps: optional, default 1
         :param learning_rate: optional, default 0.01
-        :param batch_size: optional, default 10
         :param num_epochs: optional, default 10
         :param stddev: optional, default 0.1. Ignored if visible_unit_type is not 'gauss'
         :param verbose: level of verbosity. optional, default 0
@@ -69,9 +45,7 @@ class RBM(object):
         self.visible_unit_type = visible_unit_type
         self.main_dir = main_dir
         self.model_name = model_name
-        self.gibbs_sampling_steps = gibbs_sampling_steps
         self.learning_rate = learning_rate
-        self.batch_size = batch_size
         self.num_epochs = num_epochs
         self.stddev = stddev
         self.verbose = verbose
@@ -80,12 +54,12 @@ class RBM(object):
         self.model_path = self.models_dir + self.model_name
 
         self.W = None
-        self.bh_ = None
-        self.bv_ = None
+        self.hid_bias_ = None
+        self.vis_bias_ = None
 
-        self.w_upd8 = None
-        self.bh_upd8 = None
-        self.bv_upd8 = None
+        self.w_update = None
+        self.hid_bias_update = None
+        self.vis_bias_update = None
 
         self.encode = None
 
@@ -140,6 +114,7 @@ class RBM(object):
 
         self.tf_summary_writer = tf.train.SummaryWriter(self.summary_dir, self.tf_session.graph_def)
 
+    #TODO : train by score matching method
     def _train_model(self, train_set, validation_set):
 
         """ Train the model.
@@ -156,19 +131,15 @@ class RBM(object):
 
     def _run_train_step(self, train_set):
 
-        """ Run a training step. A training step is made by randomly shuffling the training set,
-        divide into batches and run the variable update nodes for each batch.
+        """ Run a training step.
         :param train_set: training set
         :return: self
         """
 
-        np.random.shuffle(train_set)
+        updates = [self.w_update, self.hid_bias_update, self.vis_bias_update]
 
-        batches = [_ for _ in gen_batches(train_set, self.batch_size)]
-        updates = [self.w_upd8, self.bh_upd8, self.bv_upd8]
+        self.tf_session.run(updates, feed_dict=self._create_feed_dict(train_set))
 
-        for batch in batches:
-            self.tf_session.run(updates, feed_dict=self._create_feed_dict(batch))
 
     def _run_validation_error_and_summaries(self, epoch, validation_set):
 
@@ -192,7 +163,7 @@ class RBM(object):
     def _create_feed_dict(self, data):
 
         """ Create the dictionary of data to feed to TensorFlow's session during training.
-        :param data: training/validation set batch
+        :param data: training/validation set
         :return: dictionary(self.input_data: data, self.hrand: random_uniform, self.vrand: random_uniform)
         """
 
@@ -204,29 +175,27 @@ class RBM(object):
 
     def _build_model(self):
 
-        """ Build the Restricted Boltzmann Machine model in TensorFlow.
+        """ Build the FCDSEBM model in TensorFlow.
+        #TODO
         :return: self
         """
 
         self.input_data, self.hrand, self.vrand = self._create_placeholders()
-        self.W, self.bh_, self.bv_ = self._create_variables()
+        self.W, self.hid_bias_, self.vis_bias_ = self._create_variables()
 
         hprobs0, hstates0, vprobs, hprobs1, hstates1 = self.gibbs_sampling_step(self.input_data)
         positive = self.compute_positive_association(self.input_data, hprobs0, hstates0)
 
         nn_input = vprobs
 
-        for step in range(self.gibbs_sampling_steps - 1):
-            hprobs, hstates, vprobs, hprobs1, hstates1 = self.gibbs_sampling_step(nn_input)
-            nn_input = vprobs
 
         negative = tf.matmul(tf.transpose(vprobs), hprobs1)
 
         self.encode = hprobs1  # encoded data, used by the transform method
 
-        self.w_upd8 = self.W.assign_add(self.learning_rate * (positive - negative))
-        self.bh_upd8 = self.bh_.assign_add(self.learning_rate * tf.reduce_mean(hprobs0 - hprobs1, 0))
-        self.bv_upd8 = self.bv_.assign_add(self.learning_rate * tf.reduce_mean(self.input_data - vprobs, 0))
+        self.w_update = self.W.assign_add(self.learning_rate * (positive - negative))
+        self.hid_bias_update = self.hid_bias_.assign_add(self.learning_rate * tf.reduce_mean(hprobs0 - hprobs1, 0))
+        self.vis_bias_update = self.vis_bias_.assign_add(self.learning_rate * tf.reduce_mean(self.input_data - vprobs, 0))
 
         self.loss_function = tf.sqrt(tf.reduce_mean(tf.square(self.input_data - vprobs)))
         _ = tf.scalar_summary("cost", self.loss_function)
@@ -254,10 +223,10 @@ class RBM(object):
         """
 
         W = tf.Variable(tf.random_normal((self.num_visible, self.num_hidden), mean=0.0, stddev=0.01), name='weights')
-        bh_ = tf.Variable(tf.zeros([self.num_hidden]), name='hidden-bias')
-        bv_ = tf.Variable(tf.zeros([self.num_visible]), name='visible-bias')
+        hid_bias_ = tf.Variable(tf.zeros([self.num_hidden]), name='hidden-bias')
+        vis_bias_ = tf.Variable(tf.zeros([self.num_visible]), name='visible-bias')
 
-        return W, bh_, bv_
+        return W, hid_bias_, vis_bias_
 
     def gibbs_sampling_step(self, visible):
 
@@ -281,7 +250,7 @@ class RBM(object):
         :return: tuple(hidden probabilities, hidden binary states)
         """
 
-        hprobs = tf.nn.sigmoid(tf.matmul(visible, self.W) + self.bh_)
+        hprobs = tf.nn.sigmoid(tf.matmul(visible, self.W) + self.hid_bias_)
         hstates = sample_prob(hprobs, self.hrand)
 
         return hprobs, hstates
@@ -294,7 +263,7 @@ class RBM(object):
         :return: visible probabilities
         """
 
-        visible_activation = tf.matmul(hidden, tf.transpose(self.W)) + self.bv_
+        visible_activation = tf.matmul(hidden, tf.transpose(self.W)) + self.vis_bias_
 
         if self.visible_unit_type == 'bin':
             vprobs = tf.nn.sigmoid(visible_activation)
@@ -405,33 +374,6 @@ class RBM(object):
 
             return {
                 'W': self.W.eval(),
-                'bh_': self.bh_.eval(),
-                'bv_': self.bv_.eval()
+                'hid_bias_': self.hid_bias_.eval(),
+                'vis_bias_': self.vis_bias_.eval()
             }
-
-    def get_weights_as_images(self, width, height, outdir='img/', n_images=10, img_type='grey'):
-
-        """ Create and save the weights of the hidden units with respect to the
-        visible units as images.
-        :param width:
-        :param height:
-        :param outdir:
-        :param n_images:
-        :param img_type:
-        :return: self
-        """
-
-        outdir = self.data_dir + outdir
-
-        with tf.Session() as self.tf_session:
-
-            self.tf_saver.restore(self.tf_session, self.model_path)
-
-            weights = self.W.eval()
-
-            perm = np.random.permutation(self.num_hidden)[:n_images]
-
-            for p in perm:
-                w = np.array([i[p] for i in weights])
-                image_path = outdir + self.model_name + '_{}.png'.format(p)
-                gen_image(w, width, height, image_path, img_type)
