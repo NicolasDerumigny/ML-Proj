@@ -24,24 +24,21 @@ class FC_DSEBM(object):
     The interface of the class is sklearn-like.
     """
 
-    def __init__(self, num_visible, num_hidden, visible_unit_type='bin', main_dir='rbm', model_name='rbm_model',
+    def __init__(self, layer_shape, visible_unit_type='bin', main_dir='rbm', model_name='rbm_model',
                 learning_rate=0.01, num_epochs=10, stddev=0.1, verbose=0):
     	#TODO : remove visible unit type, make it as an array
         """
-        :param num_visible: number of visible units
-        :param num_hidden: number of hidden units
+        :param layer_shape: array of the number of neuron per layer
         :param visible_unit_type: type of the visible units (binary or gaussian)
         :param main_dir: main directory to put the models, data and summary directories
         :param model_name: name of the model, used to save data
-        :param gibbs_sampling_steps: optional, default 1
         :param learning_rate: optional, default 0.01
         :param num_epochs: optional, default 10
         :param stddev: optional, default 0.1. Ignored if visible_unit_type is not 'gauss'
         :param verbose: level of verbosity. optional, default 0
         """
 
-        self.num_visible = num_visible
-        self.num_hidden = num_hidden
+        self.layer_shape = layer_shape
         self.visible_unit_type = visible_unit_type
         self.main_dir = main_dir
         self.model_name = model_name
@@ -53,21 +50,18 @@ class FC_DSEBM(object):
         self.models_dir, self.data_dir, self.summary_dir = self._create_data_directories()
         self.model_path = self.models_dir + self.model_name
 
-        self.W = None
-        self.hid_bias_ = None
-        self.vis_bias_ = None
+        self.W = [None]*len(layer_shape)
+        self.bias = [None]*len(layer_shape)
+        self.global_bias = None
 
-        self.w_update = None
-        self.hid_bias_update = None
-        self.vis_bias_update = None
-
+        self.w_update = [None]*len(layer_shape)
+        self.bias_update = [None]*len(layer_shape)
+        self.global_bias_update = None
         self.encode = None
 
         self.loss_function = None
 
         self.input_data = None
-        self.hrand = None
-        self.vrand = None
         self.validation_size = None
 
         self.tf_merged_summaries = None
@@ -136,7 +130,7 @@ class FC_DSEBM(object):
         :return: self
         """
 
-        updates = [self.w_update, self.hid_bias_update, self.vis_bias_update]
+        updates = [self.w_update, self.bias_update, self.global_bias_update]
 
         self.tf_session.run(updates, feed_dict=self._create_feed_dict(train_set))
 
@@ -168,9 +162,7 @@ class FC_DSEBM(object):
         """
 
         return {
-            self.input_data: data,
-            self.hrand: np.random.rand(data.shape[0], self.num_hidden),
-            self.vrand: np.random.rand(data.shape[0], self.num_visible)
+            self.input_data: data
         }
 
     def _build_model(self):
@@ -180,10 +172,10 @@ class FC_DSEBM(object):
         :return: self
         """
 
-        self.input_data, self.hrand, self.vrand = self._create_placeholders()
-        self.W, self.hid_bias_, self.vis_bias_ = self._create_variables()
+        self.input_data = self._create_placeholders()
+        self.W, self.bias_, self.global_bias_ = self._create_variables()
 
-        hprobs0, hstates0, vprobs, hprobs1, hstates1 = self.gibbs_sampling_step(self.input_data)
+        hprobs0, hstates0, vprobs, hprobs1, hstates1 = self.gibbs_sampling_step(self.input_data) 
         positive = self.compute_positive_association(self.input_data, hprobs0, hstates0)
 
         nn_input = vprobs
@@ -193,9 +185,10 @@ class FC_DSEBM(object):
 
         self.encode = hprobs1  # encoded data, used by the transform method
 
-        self.w_update = self.W.assign_add(self.learning_rate * (positive - negative))
-        self.hid_bias_update = self.hid_bias_.assign_add(self.learning_rate * tf.reduce_mean(hprobs0 - hprobs1, 0))
-        self.vis_bias_update = self.vis_bias_.assign_add(self.learning_rate * tf.reduce_mean(self.input_data - vprobs, 0))
+        for i in range (len(self.layer_shape)):
+        	self.w_update[i] = self.W[i].assign_add(self.learning_rate * (positive[i] - negative[i]))
+       		self.bias_update[i] = self.bias[i].assign_add(self.learning_rate * tf.reduce_mean(hprobs0[i] - hprobs1[i], 0))
+        self.global_bias_update = self.global_bias.assign_add(self.learning_rate * tf.reduce_mean(self.input_data - vprobs, 0))
 
         self.loss_function = tf.sqrt(tf.reduce_mean(tf.square(self.input_data - vprobs)))
         _ = tf.scalar_summary("cost", self.loss_function)
@@ -203,16 +196,12 @@ class FC_DSEBM(object):
     def _create_placeholders(self):
 
         """ Create the TensorFlow placeholders for the model.
-        :return: tuple(input(shape(None, num_visible)),
-                       hrand(shape(None, num_hidden))
-                       vrand(shape(None, num_visible)))
+        :return: tuple(input(shape(None, num_visible)))
         """
 
-        x = tf.placeholder('float', [None, self.num_visible], name='x-input')
-        hrand = tf.placeholder('float', [None, self.num_hidden], name='hrand')
-        vrand = tf.placeholder('float', [None, self.num_visible], name='vrand')
+        x = tf.placeholder('float', [None, self.layer_shape[0]] name='x-input')
 
-        return x, hrand, vrand
+        return x
 
     def _create_variables(self):
 
@@ -222,27 +211,28 @@ class FC_DSEBM(object):
                        visible bias(shape(num_visible)))
         """
 
-        W = tf.Variable(tf.random_normal((self.num_visible, self.num_hidden), mean=0.0, stddev=0.01), name='weights')
-        hid_bias_ = tf.Variable(tf.zeros([self.num_hidden]), name='hidden-bias')
-        vis_bias_ = tf.Variable(tf.zeros([self.num_visible]), name='visible-bias')
+        for i in range (1, len(layer_shape)):
+        	W[i] = tf.Variable(tf.random_normal((self.layer_shape[i-1], self.layer_shape[i]), mean=0.0, stddev=0.01), name='weights'+str(i))
+        	bias[i] = tf.Variable(tf.zeros([self.layer_shape[i]]), name='bias'+str(i))
+        global_bias = tf.Variable(tf.zeros([self.layer_shape[0]]), name='global-bias')
 
-        return W, hid_bias_, vis_bias_
+        return W, bias, global_bias
 
-    def gibbs_sampling_step(self, visible):
+    def gibbs_sampling_step(self, inir):
 
         """ Performs one step of gibbs sampling.
-        :param visible: activations of the visible units
+        :param init: activations of the visible units
         :return: tuple(hidden probs, hidden states, visible probs,
                        new hidden probs, new hidden states)
         """
 
-        hprobs, hstates = self.sample_hidden_from_visible(visible)
-        vprobs = self.sample_visible_from_hidden(hprobs)
-        hprobs1, hstates1 = self.sample_hidden_from_visible(vprobs)
+        hprobs, hstates = self.sample_from_next_units(visible)
+        vprobs = self.sample_from_prec_units(hprobs)
+        hprobs1, hstates1 = self.sample_from_next_units(vprobs)
 
         return hprobs, hstates, vprobs, hprobs1, hstates1
 
-    def sample_hidden_from_visible(self, visible):
+    def sample_from_next_units(self, init):
 
         """ Sample the hidden units from the visible units.
         This is the Positive phase of the Contrastive Divergence algorithm.
@@ -250,12 +240,15 @@ class FC_DSEBM(object):
         :return: tuple(hidden probabilities, hidden binary states)
         """
 
-        hprobs = tf.nn.sigmoid(tf.matmul(visible, self.W) + self.hid_bias_)
+        hprobs=[tf.nn.sigmoid(tf.matmul(init, self.W[1]) + self.bias[0])]
+        for i in range(1, len(layer_shape)):
+        	hprobs = tf.nn.sigmoid(tf.matmul(self.W[i-1], self.W[i]) + self.bias[i-1])
+        
         hstates = sample_prob(hprobs, self.hrand)
 
         return hprobs, hstates
 
-    def sample_visible_from_hidden(self, hidden):
+    def sample_from_prec_units(self, hidden):
 
         """ Sample the visible units from the hidden units.
         This is the Negative phase of the Contrastive Divergence algorithm.
@@ -373,7 +366,7 @@ class FC_DSEBM(object):
             self.tf_saver.restore(self.tf_session, self.model_path)
 
             return {
-                'W': self.W.eval(),
-                'hid_bias_': self.hid_bias_.eval(),
-                'vis_bias_': self.vis_bias_.eval()
+                'W': [k.eval() for k in self.W],
+                'bias': [k.eval() for k in self.bias],
+                'global_bias_': self.global_bias_.eval()
             }
