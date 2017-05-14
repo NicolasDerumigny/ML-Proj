@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 import math
-import DSEBM
+from DSEBM import *
 
 import numpy as np
 import tensorflow as tf
@@ -14,7 +14,7 @@ FLAGS = flags.FLAGS
 
 
 def main():
-	pass
-
+	machine=FC_DSEBM([2,10])
+	machine.fit([(1,2),(2,2),(3,2)])
 if __name__ == '__main__':
 	main()
