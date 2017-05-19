@@ -12,6 +12,10 @@ data_dir = 'data/'  # directory to store algorithm data
 summary_dir = 'logs/'  # directory to store tensorflow summaries
 
 
+def g(x):
+	''' Soft plus function '''
+	return tf.log(1 + tf.exp(x))
+
 def sample_prob(probs, rand):
 	""" Takes a tensor of probabilities (as from a sigmoidal activation)
 	and samples from all the distributions
@@ -51,9 +55,6 @@ class FC_DSEBM(object):
 		self.stddev = stddev
 		self.verbose = verbose
 
-		self.models_dir, self.data_dir, self.summary_dir = self._create_data_directories()
-		self.model_path = self.models_dir + self.model_name
-
 		self.W = [None]*len(layer_shape)
 		self.bias = [None]*len(layer_shape)
 		self.global_bias = None
@@ -90,10 +91,9 @@ class FC_DSEBM(object):
 
 			self._initialize_tf_utilities_and_ops(restore_previous_model)
 			self._train_model(train_set, validation_set)
-			self.tf_saver.save(self.tf_session, self.model_path)
 
 
-	def reconstruct(self, data, graph=None):
+	def reconstruct(self, data):
 		"""Reconstruct data according to the model.
 		Parameters
 		----------
@@ -105,13 +105,10 @@ class FC_DSEBM(object):
 		-------
 		array_like, transformed data
 		"""
-		g = graph if graph is not None else self.tf_graph
 
-		with g.as_default():
-			with tf.Session() as self.tf_session:
-				self.tf_saver.restore(self.tf_session, self.model_path)
-				feed = {self.input_data: data, self.keep_prob: 1}
-				return self.reconstruction.eval(feed)
+		with tf.Session() as self.tf_session:
+			feed = {self.input_data: data}
+			return self.reconstruction.eval(feed)
 
 
 	def score(self, data, data_ref, graph=None):
@@ -126,17 +123,14 @@ class FC_DSEBM(object):
 		-------
 		float: Mean error.
 		"""
-		g = graph if graph is not None else self.tf_graph
 
-		with g.as_default():
-			with tf.Session() as self.tf_session:
-				self.tf_saver.restore(self.tf_session, self.model_path)
-				feed = {
-					self.input_data: data,
-					self.input_labels: data_ref,
-					self.keep_prob: 1
-				}
-				return self.cost.eval(feed)
+		with tf.Session() as self.tf_session:
+			feed = {
+				self.input_data: data,
+				self.input_labels: data_ref,
+				self.keep_prob: 1
+			}
+			return self.cost.eval(feed)
 
 
 
@@ -146,8 +140,8 @@ class FC_DSEBM(object):
 		Restore a previously trained model if the flag restore_previous_model is true.
 		"""
 
-		self.tf_merged_summaries = tf.merge_all_summaries()
-		init_op = tf.initialize_all_variables()
+		self.tf_merged_summaries = tf.summary.merge_all()
+		init_op = tf.global_variables_initializer()
 		self.tf_saver = tf.train.Saver()
 
 		self.tf_session.run(init_op)
@@ -155,9 +149,7 @@ class FC_DSEBM(object):
 		if restore_previous_model:
 			self.tf_saver.restore(self.tf_session, self.model_path)
 
-		self.tf_summary_writer = tf.train.SummaryWriter(self.summary_dir, self.tf_session.graph_def)
 
-	#TODO : train by score matching method
 	def _train_model(self, train_set, validation_set):
 
 		""" Train the model.
@@ -179,9 +171,7 @@ class FC_DSEBM(object):
 		:return: self
 		"""
 
-		updates = [self.w_update, self.bias_update, self.global_bias_update]
-
-		self.tf_session.run(updates, feed_dict=self._create_feed_dict(train_set))
+		self.tf_session.run(self.train, feed_dict=self._create_feed_dict(train_set))
 
 
 	def _run_validation_error_and_summaries(self, epoch, validation_set):
@@ -212,32 +202,35 @@ class FC_DSEBM(object):
 		"""
 
 		return {
-			self.input_data: data.keys()[randint(0,len(data.keys()))] #SGD algorithm
+			self.input_data: np.reshape(data[randint(0,len(data)-1)], (len(data[0]), 1)) #SGD algorithm
 		}
     
 	def _build_model(self):
-		#TODO
-
 		""" Build the FCDSEBM model in TensorFlow.
 		:return: self
 		"""
 
 		self.input_data = self._create_placeholders()
-		self.W, self.bias_, self.global_bias_ = self._create_variables()
+		self.W, self.bias, self.global_bias = self._create_variables()
 
 		optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-		w_update = [None] * len(self.layer_shape)
-		bias_update = [None] * len(self.layer_shape)
+
+		h=[None]*len(self.layer_shape)
+		h[0]=self.input_data
 
 		for i in range (1, len(self.layer_shape)):
-			w_update[i] = self.W[i].assign_add()
-			bias_update[i] = self.bias[i].assign_add()
+			h[i]=g(tf.matmul(tf.transpose(self.W[i]), h[i-1]) + self.bias[i])
 
-		self.global_bias_update = 
-		result =
+		result = tf.zeros((self.layer_shape[-1],1))+1
+		for i in range (len(self.layer_shape)-2, -1, -1):
+			result = tf.matmul(self.W[i+1],\
+					 		   tf.sigmoid(tf.matmul(tf.transpose(self.W[i+1]),h[i]) + self.bias[i+1]))\
+					 * tf.matmul(self.W[i+1], result)
 
-		self.loss_function = 
-		_ = tf.scalar_summary("cost", self.loss_function)
+		result = result + self.global_bias
+
+
+		self.loss_function = tf.reduce_sum(tf.square(self.input_data - result))
 		self.train = optimizer.minimize(result)
 
 	def _create_placeholders(self):
@@ -246,7 +239,7 @@ class FC_DSEBM(object):
 		:return: tuple(input(shape(None, num_visible)))
 		"""
 
-		x = tf.placeholder('float', [None, self.layer_shape[0]], name='x-input')
+		x = tf.placeholder('float', [self.layer_shape[0], 1], name='x-input')
 
 		return x
 
@@ -261,30 +254,10 @@ class FC_DSEBM(object):
 		bias=[None]*len(self.layer_shape)
 		for i in range (1, len(self.layer_shape)):
 			W[i] = tf.Variable(tf.random_normal((self.layer_shape[i-1], self.layer_shape[i]), mean=0.0, stddev=0.01), name='weights'+str(i))
-			bias[i] = tf.Variable(tf.zeros([self.layer_shape[i]]), name='bias'+str(i))
-		global_bias = tf.Variable(tf.zeros([self.layer_shape[0]]), name='global-bias')
+			bias[i] = tf.Variable(tf.zeros((self.layer_shape[i],1)), name='bias'+str(i))
+		global_bias = tf.Variable(tf.zeros((self.layer_shape[0],1)), name='global-bias')
 
 		return W, bias, global_bias
-
-
-	def _create_data_directories(self):
-
-		""" Create the three directories for storing respectively the models,
-		the data generated by training and the TensorFlow's summaries.
-		:return: tuple of strings(models_dir, data_dir, summary_dir)
-		"""
-
-		self.main_dir = self.main_dir + '/' if self.main_dir[-1] != '/' else self.main_dir
-
-		loc_models_dir = models_dir + self.main_dir
-		loc_data_dir = data_dir + self.main_dir
-		loc_summary_dir = summary_dir + self.main_dir
-
-		for d in [models_dir, data_dir, summary_dir]:
-			if not os.path.isdir(d):
-				os.mkdir(d)
-
-		return models_dir, data_dir, summary_dir
 
 	def transform(self, data, name='train', save=False):
 
@@ -344,5 +317,5 @@ class FC_DSEBM(object):
 			return [{
 				'W': [k.eval() for k in self.W[i]],
 				'bias': [k.eval() for k in self.bias[i]],
-				'global_bias_': self.global_bias_.eval()
+				'global_bias': self.global_bias.eval()
 			} for i in range(layer_shape)]
