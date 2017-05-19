@@ -2,6 +2,7 @@
 import numpy as np
 import math
 from DSEBM import *
+from parsing import *
 
 import numpy as np
 import tensorflow as tf
@@ -14,7 +15,12 @@ FLAGS = flags.FLAGS
 
 
 def main():
-	machine=FC_DSEBM([2,5,7,10])
-	machine.fit([(1,2),(2,2),(3,2)])
+	data, answer = load()
+	# The number of parameter is 49
+	print("Loaded !")
+	machine=FC_DSEBM([49,5,7,10])
+	machine.fit(data)
+
+
 if __name__ == '__main__':
 	main()
