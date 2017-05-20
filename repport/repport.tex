@@ -1,0 +1,70 @@
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{multicol,caption}
+\usepackage{hyperref}
+
+\newenvironment{Figure}
+{\par\medskip\noindent\center\minipage{0.9\linewidth}}
+{\endminipage\par\bigskip\medskip}
+  %figure inside multicols
+
+\setlength{\oddsidemargin}{0pt}
+% Marge gauche sur pages impaires
+\setlength{\evensidemargin}{0pt}
+% Marge gauche sur pages paires
+\setlength{\textwidth}{450pt}
+% Largeur de la zone de texte 
+\setlength{\topmargin}{0pt}
+% Pas de marge en haut
+\setlength{\headheight}{13pt}
+% Haut de page
+\setlength{\headsep}{10pt}
+% Entre le haut de page et le texte
+\setlength{\footskip}{40pt}
+% Bas de page + séparation
+\setlength{\textheight}{633pt}
+% Hauteur de la zone de texte 
+
+%opening
+\title{Deep Structured Energy Based Model for Anomaly Detection}
+\author{Nicolas Derumigny \and Emma Kerinec }
+
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+We worked on the fully connected energy based model as stated in the paper of Shuangfei Zhai et all \cite{DBLP:conf/icml/ZhaiCLZ16}.
+The paper presents three deep structured energy based models: fully connected Energy Based Model (used for static data), Reccurent Energy Bases Model (used for sequential data) and convolutional Energy Based Model (used for spatial data). The goal is to detect anomalies in the data.
+Energy based models are probabilistic models that can be used to build probability density functions. We can see a fully connected Energy Based Model as a stack of Restricted Bolzman Machines and trained it with a sotchastic gradient descent. 
+
+
+
+
+
+
+\section{Implementation}
+We use the set of examples KDD99\footnote{available at \url{https://archive.ics.uci.edu/ml/datasets/KDD+Cup+1999+Data}}. 
+Our work is available at \url{https://github.com/NicolasDerumigny/ML-Proj}.
+We have worked with TensorFlow and it was really hard to get in, probably because we have never use it before. 
+We have also had some trouble about the subject which was very specific and not clear in regard of our neural network knoledges, more of that some mistakes are present in the paper and it was very difficult to correct them (like equation 9 in the paper).\\We have implemented a two layer fully connected energy based model and trained it with a stochastic gradient descent. For that we have modified the KDD99 set in order to obtain numerical features. Only 'good' exemples have been used to trained the model.
+
+
+\section{Exploitation}
+
+
+
+
+
+
+\newpage
+
+\bibliographystyle{plain}
+\bibliography{biblio}
+
+\end{document}

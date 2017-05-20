@@ -1,0 +1,11 @@
+\begin{thebibliography}{1}
+
+\bibitem{DBLP:conf/icml/ZhaiCLZ16}
+Shuangfei Zhai, Yu~Cheng, Weining Lu, and Zhongfei Zhang.
+\newblock Deep structured energy based models for anomaly detection.
+\newblock In Maria{-}Florina Balcan and Kilian~Q. Weinberger, editors, {\em
+  Proceedings of the 33nd International Conference on Machine Learning, {ICML}
+  2016, New York City, NY, USA, June 19-24, 2016}, volume~48 of {\em {JMLR}
+  Workshop and Conference Proceedings}, pages 1100--1109. JMLR.org, 2016.
+
+\end{thebibliography}
