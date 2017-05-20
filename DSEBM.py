@@ -16,15 +16,6 @@ def g(x):
 	''' Soft plus function '''
 	return tf.log(1 + tf.exp(x))
 
-def sample_prob(probs, rand):
-	""" Takes a tensor of probabilities (as from a sigmoidal activation)
-	and samples from all the distributions
-	:param probs: tensor of probabilities
-	:param rand: tensor (of the same shape as probs) of random values
-	:return : binary sample of probabilities
-	"""
-	return tf.nn.relu(tf.sign(probs - rand))
-
 
 class FC_DSEBM(object):
 
@@ -34,7 +25,7 @@ class FC_DSEBM(object):
 	"""
 
 	def __init__(self, layer_shape, visible_unit_type='bin', main_dir='rbm', model_name='rbm_model',
-				learning_rate=0.01, num_epochs=10, stddev=0.1, verbose=0):
+				learning_rate=0.01, num_epochs=100, stddev=0.1, verbose=0):
 		"""
 		:param layer_shape: array of the number of neuron per layer
 		:param visible_unit_type: type of the visible units (binary or gaussian)
@@ -59,11 +50,15 @@ class FC_DSEBM(object):
 		self.bias = [None]*len(layer_shape)
 		self.global_bias = None
 
+		self. reconstruct = None
+
 		self.train = None
 
 		self.loss_function = None
+		self.encode = None
 
 		self.input_data = None
+		self.input_labels = None
 		self.validation_size = None
 
 		self.tf_merged_summaries = None
@@ -71,14 +66,11 @@ class FC_DSEBM(object):
 		self.tf_session = None
 		self.tf_saver = None
 
-	def fit(self, train_set, validation_set=None, restore_previous_model=False):
+	def fit(self, train_set, validation_set=None,):
 
 		""" Fit the model to the training data.
 		:param train_set: training set
 		:param validation_set: validation set. optional, default None
-		:param restore_previous_model:
-					if true, a previous trained model
-					with the same name of this model is restored from disk to continue training.
 		:return: self
 		"""
 
@@ -87,31 +79,12 @@ class FC_DSEBM(object):
 
 		self._build_model()
 
-		with tf.Session() as self.tf_session:
-
-			self._initialize_tf_utilities_and_ops(restore_previous_model)
-			self._train_model(train_set, validation_set)
-
-
-	def reconstruct(self, data):
-		"""Reconstruct data according to the model.
-		Parameters
-		----------
-		data : array_like, shape (n_samples, n_features)
-			Data to transform.
-		graph : tf.Graph, optional (default = None)
-			Tensorflow Graph object
-		Returns
-		-------
-		array_like, transformed data
-		"""
-
-		with tf.Session() as self.tf_session:
-			feed = {self.input_data: data}
-			return self.reconstruction.eval(feed)
+		self.tf_session = tf.Session()
+		self._initialize_tf_utilities_and_ops()
+		self._train_model(train_set, validation_set)
 
 
-	def score(self, data, data_ref, graph=None):
+	def score(self, data, data_ref, min_energy):
 		"""Compute the reconstruction loss over the test set.
 		Parameters
 		----------
@@ -121,20 +94,27 @@ class FC_DSEBM(object):
 			Reference data.
 		Returns
 		-------
-		float: Mean error.
+		array of float: Energy of each input
 		"""
 
-		with tf.Session() as self.tf_session:
+		result = []
+		scores = []
+		final_score = 0
+		for i in range(len(data)):
 			feed = {
-				self.input_data: data,
-				self.input_labels: data_ref,
-				self.keep_prob: 1
+				self.input_data: np.reshape(data[i], (self.layer_shape[0],1))
 			}
-			return self.cost.eval(feed)
+			result += [self.encode.eval(feed, session = self.tf_session)]
+			scores += [result[i] >= min_energy]
+			print(self.reconstruct.eval(feed, session = self.tf_session), result[i], data_ref[i])
+			if scores[i] == data_ref[i]:
+				final_score+=1
+
+		return final_score/len(data)
 
 
 
-	def _initialize_tf_utilities_and_ops(self, restore_previous_model):
+	def _initialize_tf_utilities_and_ops(self):
 
 		""" Initialize TensorFlow operations: summaries, init operations, saver, summary_writer.
 		Restore a previously trained model if the flag restore_previous_model is true.
@@ -142,12 +122,8 @@ class FC_DSEBM(object):
 
 		self.tf_merged_summaries = tf.summary.merge_all()
 		init_op = tf.global_variables_initializer()
-		self.tf_saver = tf.train.Saver()
 
 		self.tf_session.run(init_op)
-
-		if restore_previous_model:
-			self.tf_saver.restore(self.tf_session, self.model_path)
 
 
 	def _train_model(self, train_set, validation_set):
@@ -215,19 +191,22 @@ class FC_DSEBM(object):
 
 		optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
 
-		h=[None]*len(self.layer_shape)
-		h[0]=self.input_data
+		h = [None]*len(self.layer_shape)
+		h[0] = self.input_data
 
 		for i in range (1, len(self.layer_shape)):
-			h[i]=g(tf.matmul(tf.transpose(self.W[i]), h[i-1]) + self.bias[i])
+			h[i] = g(tf.matmul(tf.transpose(self.W[i]), h[i-1]) + self.bias[i])
 
-		result = tf.zeros((self.layer_shape[-1],1))+1
+		self.encode = 0.5 * tf.reduce_sum(tf.square(self.input_data - self.global_bias)) + tf.reduce_sum(h[-1])
+
+		result = tf.ones((self.layer_shape[-1],1))
 		for i in range (len(self.layer_shape)-2, -1, -1):
-			result = tf.matmul(self.W[i+1],\
-					 		   tf.sigmoid(tf.matmul(tf.transpose(self.W[i+1]),h[i]) + self.bias[i+1]))\
+			result = tf.sigmoid(tf.matmul(self.W[i+1],h[i+1]) + self.bias[i])\
 					 * tf.matmul(self.W[i+1], result)
 
 		result = result + self.global_bias
+
+		self.reconstruct = result
 
 
 		self.loss_function = tf.reduce_sum(tf.square(self.input_data - result))
@@ -252,57 +231,12 @@ class FC_DSEBM(object):
 		"""
 		W=[None]*len(self.layer_shape)
 		bias=[None]*len(self.layer_shape)
-		for i in range (1, len(self.layer_shape)):
+		for i in range (0, len(self.layer_shape)):
 			W[i] = tf.Variable(tf.random_normal((self.layer_shape[i-1], self.layer_shape[i]), mean=0.0, stddev=0.01), name='weights'+str(i))
 			bias[i] = tf.Variable(tf.zeros((self.layer_shape[i],1)), name='bias'+str(i))
 		global_bias = tf.Variable(tf.zeros((self.layer_shape[0],1)), name='global-bias')
 
 		return W, bias, global_bias
-
-	def transform(self, data, name='train', save=False):
-
-		""" Transform data according to the model.
-		:type data: array_like
-		:param data: Data to transform
-		:type name: string, default 'train'
-		:param name: Identifier for the data that is being encoded
-		:type save: boolean, default 'False'
-		:param save: If true, save data to disk
-		:return: transformed data
-		"""
-
-		with tf.Session() as self.tf_session:
-
-			self.tf_saver.restore(self.tf_session, self.model_path)
-
-			encoded_data = self.encode.eval(self._create_feed_dict(data))
-
-			if save:
-				np.save(self.data_dir + self.model_name + '-' + name, encoded_data)
-
-			return encoded_data
-
-	def load_model(self, shape, model_path):
-
-		""" Load a trained model from disk. The shape of the model
-		(num_visible, num_hidden) and the number of gibbs sampling steps
-		must be known in order to restore the model.
-		:param shape: tuple(num_visible, num_hidden)
-		:param model_path:
-		:return: self
-		"""
-
-		self.num_visible, self.num_hidden = shape[0], shape[1]
-
-		self._build_model()
-
-		init_op = tf.initialize_all_variables()
-		self.tf_saver = tf.train.Saver()
-
-		with tf.Session() as self.tf_session:
-
-			self.tf_session.run(init_op)
-			self.tf_saver.restore(self.tf_session, model_path)
 
 	def get_model_parameters(self):
 
@@ -310,12 +244,13 @@ class FC_DSEBM(object):
 		:return: model parameters
 		"""
 
-		with tf.Session() as self.tf_session:
+		self.tf_saver.restore(self.tf_session, self.model_path)
 
-			self.tf_saver.restore(self.tf_session, self.model_path)
+		return [{
+			'W': [k.eval() for k in self.W[i]],
+			'bias': [k.eval() for k in self.bias[i]],
+			'global_bias': self.global_bias.eval()
+		} for i in range(layer_shape)]
 
-			return [{
-				'W': [k.eval() for k in self.W[i]],
-				'bias': [k.eval() for k in self.bias[i]],
-				'global_bias': self.global_bias.eval()
-			} for i in range(layer_shape)]
+	def delete(self):
+		self.tf_session.close()
