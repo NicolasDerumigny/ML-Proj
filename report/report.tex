@@ -1,0 +1,94 @@
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{multicol,caption}
+\usepackage{hyperref}
+
+\newenvironment{Figure}
+{\par\medskip\noindent\center\minipage{0.9\linewidth}}
+{\endminipage\par\bigskip\medskip}
+  %figure inside multicols
+
+\setlength{\oddsidemargin}{0pt}
+% Marge gauche sur pages impaires
+\setlength{\evensidemargin}{0pt}
+% Marge gauche sur pages paires
+\setlength{\textwidth}{450pt}
+% Largeur de la zone de texte 
+\setlength{\topmargin}{0pt}
+% Pas de marge en haut
+\setlength{\headheight}{13pt}
+% Haut de page
+\setlength{\headsep}{10pt}
+% Entre le haut de page et le texte
+\setlength{\footskip}{40pt}
+% Bas de page + séparation
+\setlength{\textheight}{633pt}
+% Hauteur de la zone de texte 
+
+%opening
+\title{Deep Structured Energy Based Model for Anomaly Detection}
+\author{Nicolas Derumigny \and Emma Kerinec }
+
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+We implemented the fully connected energy based model as stated in the paper of Shuangfei Zhai et all \cite{DBLP:conf/icml/ZhaiCLZ16}.
+This paper presents three deep structured energy based models: 
+\begin{itemize}
+\item Fully Connected Energy Based Model, used for static data)
+\item Recurrent Energy Bases Model, used for sequential data
+\item Convolutional Energy Based Model, used for spatial data
+\end{itemize}
+
+All these models are generalisations of RBM, Restricted Boltzman Machine, model that learns an energy function as estimator of the density. The higher the energy is, the lower the probability will be.
+
+This models are unsupervisedly trained, and then used for anomaly detection: example that are recognised to have a small probability of occurrence (when the energy is above a given threshold) or when the reconstruction error is high (again, above a given threshold), the example is classified as an error.
+
+
+To train the machines, we used the stochastic gradient descent algorithm with the score matching method. In the paper, it was proved to be equivalent of the training of a Deep Denoising Autoencoder.
+
+
+
+
+
+
+\section{Implementation}
+We use the set of examples KDD99\footnote{available at \url{https://archive.ics.uci.edu/ml/datasets/KDD+Cup+1999+Data}}, as stated in the paper. These are simulated connection informations for atta. 
+Our work is available at \url{https://github.com/NicolasDerumigny/ML-Proj}.
+We have worked in python 3 and coded from a RBM implementation in  TensorFlow the sklearn-like class FC-DSEBM simulating a Fully Connected Deep Structered Energy Based Model. It was really hard to get into Tensorflow, as we have never used it before. 
+
+We have also had some trouble about the subject which was very specific and not clear in regard of our neural network knowledge. Moreover, a few mistakes are present in the paper and it was very difficult to correct them.
+
+We kept only examples without anomaly to train the model, and modified KDD99 to obtain only numerical data by converting a feature that can take $n$ discrete value to $n$ different new features corresponding to $feature == value$.
+
+
+\section{Exploitation}
+Due to a lack of time, we only present here a FC-DSEBM functional with $n=2$ layer only. In the other cases, the tests outputs most of the time \texttt{nan}. We believe that this results from a wrong training. Indeed, we corrected the equation  (9) of the article from 
+\[h_{l-1}' = \sigma (W_l^T h_{l-1} + b_l) . ( W_l.h_l)\]
+Which is roughly wrong, as $h_{l-1} \in \mathbb{R}^{K_{l-1}}$ but $W_l^T h_{l-1) + b_l \in \mathbb{R}^{K_{l}}}$, so $.$ the element-wise multiplication is not possible.
+
+We corrected it by:
+\[h_{l-1}' = \sigma (W_{l}. h_{l} + b_{l-1}) . ( W_l.h_l)\]
+Found only by a dimensionality argument over the matrices.
+
+\bigskip
+
+%RESULT HERE IN A NICE TABULAR
+
+
+
+
+\newpage
+
+\bibliographystyle{plain}
+\bibliography{biblio}
+
+\end{document}
