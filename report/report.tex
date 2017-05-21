@@ -43,7 +43,7 @@
 We implemented the fully connected energy based model as stated in the paper of Shuangfei Zhai et all \cite{DBLP:conf/icml/ZhaiCLZ16}.
 This paper presents three deep structured energy based models: 
 \begin{itemize}
-\item Fully Connected Energy Based Model, used for static data)
+\item Fully Connected Energy Based Model, used for static data
 \item Recurrent Energy Bases Model, used for sequential data
 \item Convolutional Energy Based Model, used for spatial data
 \end{itemize}
@@ -61,7 +61,7 @@ To train the machines, we used the stochastic gradient descent algorithm with th
 
 
 \section{Implementation}
-We use the set of examples KDD99\footnote{available at \url{https://archive.ics.uci.edu/ml/datasets/KDD+Cup+1999+Data}}, as stated in the paper. These are simulated connection informations for atta. 
+We use the set of examples KDD99\footnote{available at \url{https://archive.ics.uci.edu/ml/datasets/KDD+Cup+1999+Data}}, as stated in the paper. These are simulated connection informations for attack over a network. 
 Our work is available at \url{https://github.com/NicolasDerumigny/ML-Proj}.
 We have worked in python 3 and coded from a RBM implementation in  TensorFlow the sklearn-like class FC-DSEBM simulating a Fully Connected Deep Structered Energy Based Model. It was really hard to get into Tensorflow, as we have never used it before. 
 
@@ -71,17 +71,13 @@ We kept only examples without anomaly to train the model, and modified KDD99 to 
 
 
 \section{Exploitation}
-Due to a lack of time, we only present here a FC-DSEBM functional with $n=2$ layer only. In the other cases, the tests outputs most of the time \texttt{nan}. We believe that this results from a wrong training. Indeed, we corrected the equation  (9) of the article from 
+Due to a lack of time, we only present here a FC-DSEBM functional with $n=2$ layer only. In the other cases, the tests outputs most of the time \texttt{nan}, or unexploitable results (negative values for the energy...). We believe that this results from a wrong training. Indeed, we corrected the equation  (9) of the article from 
 \[h_{l-1}' = \sigma (W_l^T h_{l-1} + b_l) . ( W_l.h_l)\]
 Which is roughly wrong, as $h_{l-1} \in \mathbb{R}^{K_{l-1}}$ but $W_l^T h_{l-1) + b_l \in \mathbb{R}^{K_{l}}}$, so $.$ the element-wise multiplication is not possible.
 
 We corrected it by:
 \[h_{l-1}' = \sigma (W_{l}. h_{l} + b_{l-1}) . ( W_l.h_l)\]
 Found only by a dimensionality argument over the matrices.
-
-\bigskip
-
-%RESULT HERE IN A NICE TABULAR
 
 
 
