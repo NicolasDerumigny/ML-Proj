@@ -10,7 +10,7 @@ import tensorflow as tf
 
 
 NUM_EPOCHS=100
-NUM_EXAMPLES=10
+NUM_EXAMPLES=100
 
 
 def main():

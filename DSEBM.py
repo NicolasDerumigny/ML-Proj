@@ -106,7 +106,7 @@ class FC_DSEBM(object):
 			}
 			result += [self.encode.eval(feed, session = self.tf_session)]
 			scores += [result[i] >= min_energy]
-			print(self.reconstruct.eval(feed, session = self.tf_session), result[i], data_ref[i])
+			print(self.encode.eval(feed, session = self.tf_session), result[i], data_ref[i])
 			if scores[i] == data_ref[i]:
 				final_score+=1
 
